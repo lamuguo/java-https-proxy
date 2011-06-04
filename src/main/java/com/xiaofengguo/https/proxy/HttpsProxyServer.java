@@ -2,11 +2,11 @@
 
 package com.xiaofengguo.https.proxy;
 
-import java.io.IOException;
-import java.util.logging.Logger;
-
 import org.mortbay.jetty.Server;
 import org.mortbay.jetty.bio.SocketConnector;
+
+import java.io.IOException;
+import java.util.logging.Logger;
 
 
 /**
@@ -30,6 +30,7 @@ public class HttpsProxyServer {
   public static void main(String[] args) throws IOException {
     Server server = new Server();
 
+    System.setProperty("java.net.debug","all");
     // Create https connector.    
     SocketConnector httpsConnector = new SocketConnector();
     httpsConnector.setPort(8443);

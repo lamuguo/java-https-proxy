@@ -2,15 +2,13 @@
 
 package com.xiaofengguo.https.proxy;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.logging.Logger;
+import org.mortbay.jetty.Server;
+import org.mortbay.jetty.security.SslSocketConnector;
+import org.mortbay.jetty.servlet.Context;
+import org.mortbay.jetty.servlet.ServletHolder;
 
-import javax.net.ServerSocketFactory;
-import javax.net.ssl.SSLServerSocketFactory;
+import java.io.IOException;
+import java.util.logging.Logger;
 
 
 /**
@@ -31,60 +29,32 @@ public class HttpProxy {
    * @param args
    * @throws IOException 
    */
-  public static void main(String[] args) throws IOException {
-//    Server server = new Server();
-//
-//    // Create https connector.    
-//    SslSocketConnector httpsConnector = new SslSocketConnector();
-//    httpsConnector.setPort(8443);
-//    httpsConnector.setKeystore("/tmp/https/localKeyStore");
-//    httpsConnector.setPassword("123456");
-//    httpsConnector.setKeyPassword("123456");
-//    server.addConnector(httpsConnector);
-//
-//    server.setHandler(new ReverseProxyHandler());
-//    
-//    try {
-//      server.start();
-//      server.join();
-//    } catch (Exception e) {
-//      // TODO(xiaofengguo): Auto-generated catch block
-//      e.printStackTrace();
-//    }
-//
+  public static void main(String[] args) throws Exception {
+    System.setProperty("java.net.debug","all");
+    System.setProperty("javax.net.ssl.keyStore", "/tmp/https/localKeyStore");
+    System.setProperty("javax.net.ssl.keyStorePassword", "123456");
 
-//    System.setProperty("javax.net.ssl.keyStore", "/tmp/https/localKeyStore");
-//    System.setProperty("javax.net.ssl.keyStorePassword", "123456");
-//    System.setProperty("javax.net.debug","all");
-    ServerSocketFactory factory = ServerSocketFactory.getDefault();
-    ServerSocket socketServer = factory.createServerSocket(9000);
-//    LOG.info("enabled protocols: " + Arrays.toString(socketServer.getEnabledProtocols()));
-//    LOG.info("supported protocols: " + Arrays.toString(socketServer.getSupportedProtocols()));
-//    LOG.info("enable session create: " + socketServer.getEnableSessionCreation());
+    // start a proxy server on port 8888
+    Server proxy = new Server();
+//    SelectChannelConnector connector = new SslSelectChannelConnector();
+    SslSocketConnector connector = new SslSocketConnector();
+    connector.setPort(8443);
+    connector.setKeystore("/tmp/https/localKeyStore");
+    connector.setTruststore("/tmp/https/localKeyStore");
+    connector.setPassword("123456");
+    connector.setKeyPassword("123456");
+    connector.setTrustPassword("123456");
+//    // Connector connector = new SocketConnector();
+//    connector.setPort(8443);
+    proxy.addConnector(connector);
 
-    Socket socket = socketServer.accept();
-
-    InputStream in = socket.getInputStream();
-    OutputStream out = socket.getOutputStream();
+    Context context = new Context(proxy,"/",0);
+    context.addServlet(new ServletHolder(new AsyncProxyServlet.Transparent(null, "hudson.xiaofengguo.com", 8080)), "/");
+//    context.addServlet(new ServletHolder(new AsyncProxyServlet()), "/");
     
-    Socket sock = new Socket("hudson.xiaofengguo.com", 8080);
-    
-    OutputStream sockOut = sock.getOutputStream();
-    int count = -1;
-    byte buf[] = new byte[256 * 1024];
-    while ((count = in.read(buf)) > 0) {
-      sockOut.write(buf, 0, count);
-      LOG.info("Wrote : \"" + new String(buf, 0, count) + "\"");
-    }
-    
-    InputStream sockIn = sock.getInputStream();
-    count = -1;
-    while ((count = sockIn.read(buf)) > 0) {
-      out.write(buf, 0, count);
-      LOG.info("Wrote back: \"" + new String(buf, 0, count) + "\"");
-    }
-    sock.close();    
-    socket.close();
+    proxy.start();
+    proxy.join();
   }
 
+  
 }
