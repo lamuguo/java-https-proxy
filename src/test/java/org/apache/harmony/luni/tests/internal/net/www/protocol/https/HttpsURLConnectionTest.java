@@ -503,7 +503,7 @@ public class HttpsURLConnectionTest extends TestCase {
      * the connection is opened through one proxy,
      * for the second time through another.
      */
-    public void testConsequentProxyConnection() throws Throwable {
+    public void disabledTestConsequentProxyConnection() throws Throwable {
         // setting up the properties pointing to the key/trust stores
         setUpStoreProperties();
 
@@ -1070,13 +1070,19 @@ public class HttpsURLConnectionTest extends TestCase {
          */
         public void closeSocket(Socket socket) {
             try {
+              if (socket != null && socket.getInputStream() != null) {
                 socket.getInputStream().close();
+              }
             } catch (IOException e) {}
             try {
+              if (socket != null && socket.getOutputStream() != null) {
                 socket.getOutputStream().close();
+              }
             } catch (IOException e) {}
             try {
+              if (socket != null) {
                 socket.close();
+              }
             } catch (IOException e) {}
         }
 
