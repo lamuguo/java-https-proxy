@@ -1,23 +1,26 @@
 package com.xiaofengguo.https.proxy;
 
 import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URL;
-import java.net.URLConnection;
+import java.security.KeyStore;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.net.SocketFactory;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -31,103 +34,107 @@ public class SSLSocketExperiment {
   private static final Logger LOG = Logger.getLogger(SSLSocketExperiment.class
       .getCanonicalName());
 
-  public static class TeeStream extends OutputStream {
-    OutputStream out1;
-    OutputStream out2;
-
-    public TeeStream(OutputStream out1, OutputStream out2) {
-      this.out1 = out1;
-      this.out2 = out2;
-    }
-
-    @Override
-    public void write(int b) throws IOException {
-      out1.write(b);
-      out2.write(b);
-    }
-
-    @Override
-    public void close() throws IOException {
-      out1.close();
-      out2.close();
-    }
-
-    @Override
-    public void flush() throws IOException {
-      out1.flush();
-      out2.flush();
-    }
-  }
-
+  private static final String KEY_STORE_PATH = "/Users/xiaofengguo/temp/mySrvKeystore";
+  private static final String KS_PASSWORD = "123456";
   /**
+   * TODO(lamuguo):
+   * - Write a blog of certificate_unknown.
+   * - Make HTTP proxy run out result.
+   * - Make HTTPs proxy run out result.
+   * - Make program exit correctly.
+   * 
    * @param args
    */
-  public static void main(String[] args) throws Exception {
-    // Set default SSL properties
-    System.setProperty("javax.net.debug", "ssl");
-    System.setProperty("javax.net.ssl.keyStore",
-        "/Users/xiaofengguo/temp/mySrvKeystore");
-    System.setProperty("javax.net.ssl.keyStorePassword", "123456");
-    System.setProperty("javax.net.ssl.trustStore",
-        "/Users/xiaofengguo/temp/mySrvKeystore");
-    System.setProperty("javax.net.ssl.trustStorePassword", "123456");
+  public static void main(String[] args) {
+    Thread httpServer = null;
+    Thread forwardServer = null;
+    try {
+      // Set default SSL properties
+      String type = KeyStore.getDefaultType();
+      LOG.info("ks type = " + type + ", path = " + KEY_STORE_PATH);
 
-    // Create Jetty Daemon
-    createHttpServer(8888);
+//      System.setProperty("javax.net.debug", "all");
 
-    // Create a forward ssl
-    createForwardSSLService(9999);
+      System.setProperty("javax.net.ssl.keyStoreType", type);
+      System.setProperty("javax.net.ssl.keyStore", KEY_STORE_PATH);
+      System.setProperty("javax.net.ssl.keyStorePassword", KS_PASSWORD);
 
-    LOG.info("Start to connect HTTP: 8888");
-    // Test 8888.
-    // URLConnection conn = new URL("http://localhost:8888/").openConnection();
-    // conn.setDoOutput(true);
-    // conn.connect();
-    //
-    // LOG.info("Get HTTP result on 8888: " + conn.getContent());
+      System.setProperty("javax.net.ssl.trustStoreType", type);
+      System.setProperty("javax.net.ssl.trustStore", KEY_STORE_PATH);
+      System.setProperty("javax.net.ssl.trustStorePassword", KS_PASSWORD);
 
-    // test 9999.
-    HttpsURLConnection conn2 = (HttpsURLConnection) new URL(
-        "https://127.0.0.1:9999").openConnection();
-    conn2.setDoOutput(true);
-    conn2.connect();
-    conn2.setSSLSocketFactory((SSLSocketFactory) SSLSocketFactory.getDefault());
-    conn2.setHostnameVerifier(new HostnameVerifier() {
-      public boolean verify(String arg0, SSLSession arg1) {
-        return true;
+      // Create Jetty Daemon
+      httpServer = createHttpServer(8888);
+      // Create a forward ssl
+      forwardServer = createForwardSSLService(9999);
+
+      LOG.info("Start to connect HTTP: 8888");
+      // Test 8888.
+      // URLConnection conn = new
+      // URL("http://localhost:8888/").openConnection();
+      // conn.setDoOutput(true);
+      // conn.connect();
+      //
+      // LOG.info("Get HTTP result on 8888: " + conn.getContent());
+
+      // test 9999.
+      LOG.info("1");
+      HttpsURLConnection conn2 = (HttpsURLConnection) new URL(
+          "https://127.0.0.1:9999").openConnection();
+      conn2.setHostnameVerifier(new HostnameVerifier() {
+        public boolean verify(String hostname, SSLSession session) {
+          return true;
+        }
+      });
+      LOG.info("2");
+//      conn2.setDoInput(true);
+      conn2.setDoOutput(true);
+      LOG.info("3");
+      conn2.connect();
+      LOG.info("4");
+//      conn2.setSSLSocketFactory((SSLSocketFactory) SSLSocketFactory
+//          .getDefault());
+      OutputStream testOut = new BufferedOutputStream(conn2.getOutputStream());
+      for (int i = 0; i < 2000; ++i) {
+        testOut.write(i % 100);
       }
-    });
-    OutputStream testOut = new BufferedOutputStream(conn2.getOutputStream());
-    for (int i = 0; i < 2000; ++i) {
-      testOut.write(i % 100);
+      testOut.close();
+      int resp = conn2.getResponseCode();
+      Thread.sleep(1000);
+
+      LOG.info("Response code = " + resp);
+
+      LOG.info("Get HTTPS result on 9999: " + conn2.getContent());
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Unknown", e);
+    } finally {
+      try {
+        forwardServer.join(1000);
+        httpServer.join(1000);
+      } catch (InterruptedException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      }
+//      System.exit(0);
     }
-    testOut.close();
-    int resp = conn2.getResponseCode();
-    Thread.sleep(1000);
-
-    LOG.info("Response code = " + resp);
-
-    LOG.info("Get HTTPS result on 9999: " + conn2.getContent());
   }
 
-  private static void createForwardSSLService(int port) {
+  private static Thread createForwardSSLService(int port) {
     final int sslPort = port;
 
-    new Thread(new Runnable() {
+    Thread forwardServer = new Thread(new Runnable() {
       public void run() {
         try {
-          SSLServerSocketFactory sslserversocketfactory = (SSLServerSocketFactory) SSLServerSocketFactory
-              .getDefault();
-          SSLServerSocket sslserversocket = (SSLServerSocket) sslserversocketfactory
-              .createServerSocket(sslPort);
+          SSLContext ctx = getContext();
+          ServerSocket sslServerSocket = ctx.getServerSocketFactory().createServerSocket(sslPort);
           LOG.info("ssl socket waiting on " + sslPort);
 
           SocketFactory clientFactory = SocketFactory.getDefault();
 
           while (true) {
-            SSLSocket sslsocket = (SSLSocket) sslserversocket.accept();
-            
-            sslsocket.startHandshake();
+            SSLSocket sslsocket = (SSLSocket) sslServerSocket.accept();
+
+//            sslsocket.startHandshake();
             Socket clientSocket = clientFactory.createSocket("127.0.0.1", 8888);
 
             // Src <=> Proxy <=> Dest
@@ -136,7 +143,7 @@ public class SSLSocketExperiment {
             // outSrc <- Proxy <- inDest
             InputStream inSrc = sslsocket.getInputStream();
             OutputStream outSrc = sslsocket.getOutputStream();
-            
+
             InputStream inDest = clientSocket.getInputStream();
             OutputStream outDest = clientSocket.getOutputStream();
 
@@ -150,13 +157,41 @@ public class SSLSocketExperiment {
               "SSL forward service is stopped, due to exception", e);
         }
       }
-    }).start();
+
+      private SSLContext getContext() throws Exception {
+        String type = KeyStore.getDefaultType();
+        SSLContext ctx;
+
+        String keyStore = KEY_STORE_PATH;
+        File keyStoreFile = new File(keyStore);
+
+        FileInputStream fis = new FileInputStream(keyStoreFile);
+
+        KeyStore ks = KeyStore.getInstance(type);
+        ks.load(fis, KS_PASSWORD.toCharArray());
+
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory
+                .getDefaultAlgorithm());
+        kmf.init(ks, KS_PASSWORD.toCharArray());
+
+        TrustManagerFactory tmf = TrustManagerFactory
+                .getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(ks);
+
+        ctx = SSLContext.getInstance("TLSv1");
+        ctx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+        return ctx;
+      }
+    });
+    forwardServer.start();
+    return forwardServer;
   }
 
-  private static void createHttpServer(int port) {
+  private static Thread createHttpServer(int port) {
     final int serverPort = port;
 
-    new Thread(new Runnable() {
+    Thread httpServer = new Thread(new Runnable() {
       public void run() {
         Server server = new Server(serverPort);
         server.setHandler(new AbstractHandler() {
@@ -177,6 +212,8 @@ public class SSLSocketExperiment {
           LOG.log(Level.SEVERE, "Http server stopped due to exception", e);
         }
       }
-    }).start();
+    });
+    httpServer.start();
+    return httpServer;
   }
 }
