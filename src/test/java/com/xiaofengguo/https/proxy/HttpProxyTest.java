@@ -1,9 +1,15 @@
 package com.xiaofengguo.https.proxy;
 
+import junit.framework.TestCase;
+
+import org.apache.commons.io.IOUtils;
+import org.mortbay.jetty.Server;
+import org.mortbay.jetty.handler.AbstractHandler;
+
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.Socket;
 import java.net.URL;
-import java.net.URLConnection;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -11,12 +17,6 @@ import javax.net.SocketFactory;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
-import junit.framework.TestCase;
-
-import org.apache.commons.io.IOUtils;
-import org.mortbay.jetty.Server;
-import org.mortbay.jetty.handler.AbstractHandler;
 
 public class HttpProxyTest extends TestCase {
   private static final Logger LOG = Logger.getLogger(HttpProxyTest.class.getCanonicalName());
@@ -45,7 +45,7 @@ public class HttpProxyTest extends TestCase {
 
   @Override
   protected void setUp() throws Exception {
-    System.out.println("help");
+//    System.out.println("help");
     LOG.info("help");
     super.setUp();
     
@@ -77,7 +77,7 @@ public class HttpProxyTest extends TestCase {
       public void run() {
         Server server = new Server(port);
         LOG.info("Start http service on port: " + port);
-        server.addHandler(new AbstractHandler() {
+        server.setHandler(new AbstractHandler() {
           public void handle(String target, HttpServletRequest request,
               HttpServletResponse response, int dispatch) throws IOException,
               ServletException {
@@ -85,10 +85,12 @@ public class HttpProxyTest extends TestCase {
             response.setContentType("text/html");
             response.setStatus(HttpServletResponse.SC_OK);
             response.getWriter().print("<html><body>hello</body></html>");
+            LOG.info("Response written");
           }
         });
         try {
           server.start();
+          server.join();
         } catch (Exception e) {
           LOG.log(Level.SEVERE, "Jetty server down", e);
         }
@@ -105,6 +107,7 @@ public class HttpProxyTest extends TestCase {
       try {
         Socket clientSocket = SocketFactory.getDefault().createSocket("127.0.0.1", port);
         clientSocket.close();
+        LOG.info("Succeed in connecting port " + port);
         break;
       } catch (IOException e) {
         LOG.info("Fail to connect port " + port);
@@ -117,19 +120,19 @@ public class HttpProxyTest extends TestCase {
   protected void tearDown() throws Exception {
     LOG.info("Tear down");
     if (httpServer != null) {
-      httpServer.join();
+      httpServer.interrupt();
     }
     if (proxyServer != null) {
-      proxyServer.join();
+      proxyServer.interrupt();
     }
 
     super.tearDown();
   }
 
   public void testConnect() throws Exception {
-//    URLConnection conn = new URL("http://localhost:" + proxyServerPort + "/").openConnection();
-//    conn.setDoOutput(true);
-//    conn.connect();
-//    assertEquals("", IOUtils.toString(conn.getInputStream()));
+    HttpURLConnection conn = (HttpURLConnection) new URL("http://localhost:" + proxyServerPort + "/").openConnection();
+    conn.setDoOutput(true);
+    conn.connect();
+    assertEquals("", conn.getResponseCode());
   }
 }

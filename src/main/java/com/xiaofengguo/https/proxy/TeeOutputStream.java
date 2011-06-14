@@ -2,12 +2,14 @@ package com.xiaofengguo.https.proxy;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.logging.Logger;
 
-public class TeeStream extends OutputStream {
+public class TeeOutputStream extends OutputStream {
+  private static final Logger LOG = Logger.getLogger(TeeOutputStream.class.getCanonicalName());
   OutputStream out1;
   OutputStream out2;
 
-  public TeeStream(OutputStream out1, OutputStream out2) {
+  public TeeOutputStream(OutputStream out1, OutputStream out2) {
     this.out1 = out1;
     this.out2 = out2;
   }

@@ -14,7 +14,7 @@
 					<systemProperties>
 						<property>
 							<name>java.util.logging.config.file</name>
-							<value>${logging.location}</value>
+							<value>${basedir}/conf/logging.properties</value>
 						</property>
 					</systemProperties>
 				</configuration>
@@ -65,6 +65,5 @@
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<logging.location>${user.home}/.m2/logging.properties</logging.location>
 	</properties>
 </project>

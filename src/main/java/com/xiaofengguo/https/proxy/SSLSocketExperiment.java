@@ -147,7 +147,7 @@ public class SSLSocketExperiment {
             InputStream inDest = clientSocket.getInputStream();
             OutputStream outDest = clientSocket.getOutputStream();
 
-            TeeStream tee = new TeeStream(outDest, System.out);
+            TeeOutputStream tee = new TeeOutputStream(outDest, System.out);
 
             IOUtils.copy(inSrc, tee);
             IOUtils.copy(inDest, outSrc);

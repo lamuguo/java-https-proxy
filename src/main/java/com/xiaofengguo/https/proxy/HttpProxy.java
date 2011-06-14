@@ -2,22 +2,21 @@
 
 package com.xiaofengguo.https.proxy;
 
-import java.io.BufferedReader;
+import org.apache.commons.io.IOUtils;
+
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.net.ServerSocketFactory;
 import javax.net.SocketFactory;
-
-import org.mortbay.jetty.Server;
-import org.mortbay.jetty.security.SslSocketConnector;
-import org.mortbay.jetty.servlet.Context;
-import org.mortbay.jetty.servlet.ServletHolder;
 
 
 /**
@@ -26,37 +25,87 @@ import org.mortbay.jetty.servlet.ServletHolder;
  */
 public class HttpProxy implements Proxy {
   private static final Logger LOG = Logger.getLogger(HttpProxy.class.getCanonicalName());
-
+  
+  private static final int DEFAULT_BUFFER_SIZE = 16 * 1024;
+  
   /**
-   * @param args
-   * @throws IOException 
+   * This is a workable version but slow, on thinking about nio solutions.
+   * 
+   * @author xiaofengguo@google.com (Xiaofeng Guo)
+   *
    */
-  public static void main(String[] args) throws Exception {
-    System.setProperty("java.net.debug","all");
-    System.setProperty("javax.net.ssl.keyStore", "/tmp/https/localKeyStore");
-    System.setProperty("javax.net.ssl.keyStorePassword", "123456");
+  private class ProxyRunnable implements Runnable {
+    protected final Socket socket;
+    private final SocketFactory clientFactory = SocketFactory.getDefault();
 
-    // start a proxy server on port 8888
-    Server proxy = new Server();
-//    SelectChannelConnector connector = new SslSelectChannelConnector();
-    SslSocketConnector connector = new SslSocketConnector();
-    connector.setPort(8443);
-    connector.setKeystore("/tmp/https/localKeyStore");
-    connector.setTruststore("/tmp/https/localKeyStore");
-    connector.setPassword("123456");
-    connector.setKeyPassword("123456");
-    connector.setTrustPassword("123456");
-//    // Connector connector = new SocketConnector();
-//    connector.setPort(8443);
-    proxy.addConnector(connector);
+    public ProxyRunnable(Socket socket) {
+      this.socket = socket;
+    }
+    public void run() {
+      try {
+        LOG.info("Connect to " + remoteHostname + ":" + remotePort);
+        Socket clientSocket = clientFactory.createSocket(remoteHostname, remotePort);
+        final InputStream inSrc = socket.getInputStream();
+        final OutputStream outSrc = socket.getOutputStream();
+        final InputStream inDest = clientSocket.getInputStream();
+        final OutputStream outDest = clientSocket.getOutputStream();
+        LOG.info("6");
 
-    Context context = new Context(proxy,"/",0);
-    context.addServlet(new ServletHolder(new AsyncProxyServlet.Transparent(null, "hudson.xiaofengguo.com", 8080)), "/");
-//    context.addServlet(new ServletHolder(new AsyncProxyServlet()), "/");
-    
-    proxy.start();
-    proxy.join();
+        executor.execute(new Runnable() {
+          public void run() {
+            try {
+              IOUtils.copy(inSrc, new TeeOutputStream(outDest, System.out));
+            } catch (IOException e) {
+              LOG.log(Level.SEVERE, "Errors in forwarding request", e);
+            }
+          }
+        });
+        LOG.info("7");
+        IOUtils.copy(inDest, new TeeOutputStream(outSrc, System.out));
+        LOG.info("8");
+      } catch (IOException e) {
+        LOG.log(Level.SEVERE, "Error in http forwarding", e);
+      }
+    }
   }
+  
+  private class NonBlockingProxyRunnable extends ProxyRunnable {
+    public NonBlockingProxyRunnable(Socket socket) {
+      super(socket);
+    }
+
+    public void run() {
+      try {
+        Socket clientSocket = SocketFactory.getDefault().createSocket(remoteHostname, remotePort);
+        final InputStream inSrc = socket.getInputStream();
+        final OutputStream outSrc = socket.getOutputStream();
+        final InputStream inDest = clientSocket.getInputStream();
+        final OutputStream outDest = clientSocket.getOutputStream();
+        
+        executor.execute(new Runnable() {
+          public void run() {
+            try {
+              NonBlockingCopyUtils.copy(inSrc, new TeeOutputStream(outDest, System.out));
+            } catch (IOException e) {
+              LOG.log(Level.SEVERE, "Errors in forwarding request", e);
+            }
+          }
+        });
+
+        NonBlockingCopyUtils.copy(inDest, outSrc);
+      } catch (UnknownHostException e) {
+        // TODO(xiaofengguo): Auto-generated catch block
+        e.printStackTrace();
+      } catch (IOException e) {
+        // TODO(xiaofengguo): Auto-generated catch block
+        e.printStackTrace();
+      }
+    }
+  }
+  
+//  private final ExecutorService executor = Executors.newCachedThreadPool();
+  private final ExecutorService executor = Executors.newFixedThreadPool(100);
+
   private final ServerSocket serverSocket;
   private final String remoteHostname;
   private final int remotePort;
@@ -77,31 +126,18 @@ public class HttpProxy implements Proxy {
   }
 
   public void start() {
-    SocketFactory clientFactory = SocketFactory.getDefault();
     while (true) {
       try {
-        LOG.info("1");
         Socket socket = serverSocket.accept();
-        Socket clientSocket = clientFactory.createSocket(remoteHostname, remotePort);
-        InputStream inSrc = socket.getInputStream();
-        LOG.info("Here");
-        
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inSrc));
-        String line = null;
-        while ((line = reader.readLine()) != null) {
-          LOG.info(line);
-        }
-        LOG.info("END");
-//        OutputStream outSrc = socket.getOutputStream();
-//        InputStream inDest = clientSocket.getInputStream();
-//        OutputStream outDest = clientSocket.getOutputStream();
-//        
-//        TeeStream tee = new TeeStream(outDest, System.out);
-//        IOUtils.copy(inSrc, tee);
-//        IOUtils.copy(inDest, outSrc);
+        executor.execute(new NonBlockingProxyRunnable(socket));
       } catch (IOException e) {
-        LOG.log(Level.SEVERE, "Error in http forwarding", e);
+        LOG.log(Level.SEVERE, "Errors in accepting calls", e);
       }
     }
+  }
+
+  public static void main(String[] args) throws IOException {
+    Proxy proxy = createProxy(9998, "hudson.xiaofengguo.com", 8080);
+    proxy.start();
   }
 }
